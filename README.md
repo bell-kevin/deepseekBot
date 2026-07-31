@@ -1,5 +1,7 @@
 # Flash Chat
 
+https://bell-kevin-deepseekb-skcj.bolt.host/
+
 A tiny, anonymous chat page for **DeepSeek V4 Flash 0731** with reasoning enabled at maximum effort. There are no accounts, registrations, app-set cookies, analytics, or database records. Conversation history lives only in the open browser tab.
 
 The application source is licensed under **AGPL-3.0-or-later**. It uses a vanilla browser client, one small server function, native `fetch`, and a single direct development dependency: MIT-licensed Vite.
