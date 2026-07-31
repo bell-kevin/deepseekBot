@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A simple, anonymous chat with DeepSeek V4 Flash 0731 at maximum reasoning effort."
+    />
+    <meta name="theme-color" content="#f7f7f4" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co https://*.bolt.host; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"
+    />
+    <title>Flash Chat</title>
+    <script type="module" src="/src/main.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Flash Chat home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <path d="M13.2 2 5.7 13.1h5.2L10.8 22l7.5-11.1h-5.2L13.2 2Z" />
+            </svg>
+          </span>
+          <span class="brand-copy">
+            <strong>Flash Chat</strong>
+            <small>Open, anonymous chat</small>
+          </span>
+        </a>
+
+        <div class="topbar-actions">
+          <div class="model-badge" title="DeepSeek V4 Flash 0731 with thinking enabled at max effort">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span>
+              <strong>DeepSeek V4 Flash 0731</strong>
+              <small>Reasoning · Max effort</small>
+            </span>
+          </div>
+          <button class="icon-button" id="new-chat" type="button" aria-label="Start a new chat" title="New chat">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="chat" id="chat">
+        <section class="welcome" id="welcome" aria-labelledby="welcome-title">
+          <div class="welcome-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M13.2 2 5.7 13.1h5.2L10.8 22l7.5-11.1h-5.2L13.2 2Z" />
+            </svg>
+          </div>
+          <h1 id="welcome-title">What can I help with?</h1>
+          <p>Deep reasoning, a clean interface, and no account required.</p>
+          <div class="suggestions" aria-label="Example prompts">
+            <button type="button" data-prompt="Explain quantum computing in plain English.">Explain something</button>
+            <button type="button" data-prompt="Help me plan a focused and realistic week.">Make a plan</button>
+            <button type="button" data-prompt="Write a short story about a library at the edge of space.">Create something</button>
+          </div>
+        </section>
+
+        <section class="messages" id="messages" aria-live="polite" aria-label="Conversation"></section>
+      </main>
+
+      <footer class="composer-area">
+        <form class="composer" id="composer">
+          <label class="sr-only" for="prompt">Message Flash Chat</label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            rows="1"
+            maxlength="12000"
+            placeholder="Message Flash Chat…"
+            autocomplete="off"
+            required
+          ></textarea>
+          <button class="send-button" id="send" type="submit" aria-label="Send message">
+            <svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 12 6-6 6 6M12 6v12" />
+            </svg>
+            <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="7" y="7" width="10" height="10" rx="1.5" />
+            </svg>
+          </button>
+        </form>
+        <div class="fine-print">
+          <span>No login. Chat history stays in this tab.</span>
+          <span aria-hidden="true">·</span>
+          <a href="/source-code.txt">AGPLv3 source</a>
+          <span aria-hidden="true">·</span>
+          <span>Messages are sent to DeepSeek.</span>
+        </div>
+      </footer>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

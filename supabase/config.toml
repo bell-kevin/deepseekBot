@@ -1,0 +1,5 @@
+project_id = "flash-chat"
+
+[functions.chat]
+# Public by design: visitors do not create accounts or sign in.
+verify_jwt = false
