@@ -1,3 +1,5 @@
+<a name="readme-top"></a>
+
 # Flash Chat
 
 https://bell-kevin-deepseekb-skcj.bolt.host/
@@ -83,3 +85,5 @@ npm run check
 ```
 
 This runs the unit tests, production build, and corresponding-source generation.
+
+<p align="right"><a href="#readme-top">back to top</a></p>
