@@ -1,2 +1,9 @@
 node_modules/
+dist/
+public/source-code.txt
 .env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.supabase/
