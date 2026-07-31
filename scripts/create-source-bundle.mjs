@@ -26,12 +26,16 @@ const files = [
   'tests/sse.test.mjs',
 ];
 
-const sections = await Promise.all(
+const sections = (await Promise.all(
   files.map(async (file) => {
-    const contents = await readFile(resolve(root, file), 'utf8');
-    return `\n${'='.repeat(80)}\nFILE: ${file}\n${'='.repeat(80)}\n\n${contents}`;
+    try {
+      const contents = await readFile(resolve(root, file), 'utf8');
+      return `\n${'='.repeat(80)}\nFILE: ${file}\n${'='.repeat(80)}\n\n${contents}`;
+    } catch {
+      return null;
+    }
   }),
-);
+)).filter(Boolean);
 
 const header = `FLASH CHAT CORRESPONDING SOURCE\n
 Generated from the exact application source at build time.\n
