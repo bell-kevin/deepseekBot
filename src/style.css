@@ -228,7 +228,6 @@ a {
   border: 1px solid var(--line);
   border-radius: 17px;
   background: var(--surface);
-  box-shadow: var(--shadow);
 }
 
 .welcome-mark svg {
