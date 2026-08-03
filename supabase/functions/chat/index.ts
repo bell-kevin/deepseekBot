@@ -95,20 +95,32 @@ function jsonResponse(status: number, body: { error: string }, headers: HeadersI
   });
 }
 
-// Only the address appended by the nearest trusted proxy can be relied on.
-// A caller can set `cf-connecting-ip` and `x-real-ip` freely and can prepend
-// arbitrary entries to `x-forwarded-for`, so the leftmost entry is attacker
-// controlled. The gateway appends what it actually observed to the right, so
-// the rightmost entry is the only value a caller cannot choose.
+// Identifies the caller for rate limiting. Getting this wrong is not a small
+// error: if the value is not STABLE per caller, the per-caller limit can never
+// accumulate and one attacker can consume the whole global allowance.
+//
+// `cf-connecting-ip` is set by the Cloudflare edge that fronts this runtime and
+// holds the true client address. It is not caller-forgeable: requests that try
+// to supply it themselves are refused at the edge before reaching this code.
+//
+// The rightmost `x-forwarded-for` entry must NOT be used. It is the inbound
+// accelerator node, which is load balanced and therefore DIFFERENT on every
+// request, so keying on it gives each request its own private bucket. The
+// leftmost entry is the client address here because the edge overwrites this
+// header rather than appending to it, discarding anything the caller supplied.
 function getRequestId(request: Request) {
+  const edgeClientIp = request.headers.get('cf-connecting-ip')?.trim();
+  if (edgeClientIp) return edgeClientIp;
+
   const forwarded = request.headers.get('x-forwarded-for');
   if (forwarded) {
-    const hops = forwarded
+    const first = forwarded
       .split(',')
       .map((hop) => hop.trim())
-      .filter(Boolean);
-    if (hops.length > 0) return hops[hops.length - 1];
+      .filter(Boolean)[0];
+    if (first) return first;
   }
+
   return 'unknown';
 }
 

@@ -64,11 +64,28 @@ function sendJson(response, status, body, extraHeaders = {}) {
 
 function getRequestIp(request) {
   // The TCP peer address cannot be forged by the caller, so it is the default.
-  // Behind a trusted proxy the peer is the proxy itself, so read the rightmost
-  // `x-forwarded-for` entry, which is the address that proxy actually observed.
-  // The leftmost entry is never used: proxies append, so a caller can prepend
-  // any value it likes.
+  //
+  // Behind a proxy the peer is the proxy itself, so a forwarded header has to be
+  // consulted instead — but only when the operator opts in, because these
+  // headers are caller-supplied unless something in front overwrites them.
+  //
+  // Which entry is correct depends on what is in front. A CDN such as Cloudflare
+  // OVERWRITES the forwarded header and publishes the client address in its own
+  // header, and its rightmost forwarded entry is a load-balanced edge node that
+  // differs on every request — keying on that would give each request its own
+  // bucket and the per-caller limit would never accumulate at all. A plain
+  // single reverse proxy such as nginx APPENDS, making the rightmost entry the
+  // address it observed and the leftmost caller-controlled.
+  //
+  // So: prefer an explicitly named client-IP header, then Cloudflare's, then
+  // fall back to the rightmost forwarded entry for the plain single-proxy case.
   if (trustProxy) {
+    const headerName = (environment.CLIENT_IP_HEADER || 'cf-connecting-ip').toLowerCase();
+    const named = request.headers[headerName];
+    if (typeof named === 'string' && named.trim()) {
+      return named.split(',')[0].trim();
+    }
+
     const forwarded = request.headers['x-forwarded-for'];
     if (typeof forwarded === 'string') {
       const hops = forwarded
