@@ -15,6 +15,10 @@ const RATE_WINDOW_MS = 60_000;
 // when per-caller identification fails.
 const GLOBAL_RATE_LIMIT = Number.parseInt(Deno.env.get('GLOBAL_RATE_LIMIT') || '240', 10);
 const RATE_LIMIT_RPC_TIMEOUT_MS = 2_000;
+// Allowance applied per instance while the durable limit is unreachable. The
+// service keeps answering, but a database outage degrades the ceiling instead
+// of removing it.
+const DEGRADED_RATE_LIMIT = 3;
 
 const SYSTEM_PROMPT = `You are a helpful AI assistant powered by DeepSeek V4 Flash 0731.
 Answer the user's request directly and accurately. Prefer clear, concise language, but include detail when it is useful. If you are uncertain, say so. Never invent sources or claim to have capabilities you do not have.`;
@@ -41,14 +45,42 @@ class RequestError extends Error {
 
 const buckets = new Map<string, Bucket>();
 
-function getCorsHeaders(origin: string | null) {
+// Origins allowed when ALLOWED_ORIGIN is not configured. Reflecting whatever
+// origin the caller sent would let ANY web page spend the provider key using
+// its visitors' browsers and read the streamed answer, so the unconfigured
+// case falls back to this conservative list rather than to a wildcard.
+const DEFAULT_ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/([a-z0-9-]+\.)*bolt\.host$/i,
+  /^https:\/\/([a-z0-9-]+\.)*supabase\.co$/i,
+  /^http:\/\/localhost(:\d+)?$/i,
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/i,
+];
+
+// Returns the origin to echo back, or null when the caller's origin is not
+// allowed. Fails CLOSED: an unrecognised origin resolves to null so no
+// Access-Control-Allow-Origin is emitted and the request is refused.
+function resolveAllowedOrigin(origin: string | null) {
   const configuredOrigin = Deno.env.get('ALLOWED_ORIGIN')?.replace(/\/$/, '');
-  return {
+
+  if (configuredOrigin) {
+    return origin === configuredOrigin ? configuredOrigin : null;
+  }
+
+  // Non-browser callers send no Origin. They are not cross-origin, so there is
+  // nothing to authorise and no CORS header is needed.
+  if (!origin) return null;
+
+  return DEFAULT_ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin)) ? origin : null;
+}
+
+function getCorsHeaders(allowedOrigin: string | null) {
+  const headers: Record<string, string> = {
     'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Origin': configuredOrigin || origin || '*',
     Vary: 'Origin',
   };
+  if (allowedOrigin) headers['Access-Control-Allow-Origin'] = allowedOrigin;
+  return headers;
 }
 
 function jsonResponse(status: number, body: { error: string }, headers: HeadersInit) {
@@ -83,8 +115,9 @@ function getRequestId(request: Request) {
 // Local, per-instance pre-filter. It is cheap and catches the obvious floods
 // without a round trip, but it is NOT the real limit: instances do not share
 // memory and are recycled, so `claimSharedSlot` below is what actually bounds
-// traffic across the whole service.
-function isRateLimited(identifier: string) {
+// traffic across the whole service. `limit` is a parameter so the caller can
+// enforce a tighter allowance when the durable limit is unavailable.
+function isRateLimited(identifier: string, limit: number = RATE_LIMIT) {
   const now = Date.now();
   let bucket = buckets.get(identifier);
 
@@ -102,7 +135,8 @@ function isRateLimited(identifier: string) {
   }
 
   return {
-    limited: bucket.count > RATE_LIMIT,
+    limited: bucket.count > limit,
+    count: bucket.count,
     retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
   };
 }
@@ -110,12 +144,20 @@ function isRateLimited(identifier: string) {
 // The durable, service-wide limit. State lives in the database so every
 // instance counts against the same totals, and the claim is atomic so two
 // simultaneous requests cannot both take the last remaining slot.
-// Fails OPEN: if the database cannot be reached, chat keeps working rather
-// than going offline, and the local pre-filter above still applies.
-async function claimSharedSlot(identifier: string): Promise<'ok' | 'caller' | 'global'> {
+//
+// Fails OPEN rather than offline, but reports 'degraded' instead of 'ok' so the
+// caller can tell "the shared counter allowed this" apart from "the shared
+// counter could not be consulted". Returning 'ok' for both is what previously
+// let the service-wide ceiling disappear entirely during a database outage.
+async function claimSharedSlot(
+  identifier: string,
+): Promise<'ok' | 'caller' | 'global' | 'degraded'> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceKey) return 'ok';
+  if (!supabaseUrl || !serviceKey) {
+    console.error('Rate limit degraded: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set.');
+    return 'degraded';
+  }
 
   try {
     const response = await fetch(`${supabaseUrl}/rest/v1/rpc/claim_chat_request`, {
@@ -136,13 +178,14 @@ async function claimSharedSlot(identifier: string): Promise<'ok' | 'caller' | 'g
 
     if (!response.ok) {
       await response.body?.cancel();
-      return 'ok';
+      return 'degraded';
     }
 
     const verdict = await response.json();
-    return verdict === 'caller' || verdict === 'global' ? verdict : 'ok';
+    if (verdict === 'caller' || verdict === 'global') return verdict;
+    return verdict === 'ok' ? 'ok' : 'degraded';
   } catch {
-    return 'ok';
+    return 'degraded';
   }
 }
 
@@ -231,8 +274,8 @@ function providerError(status: number) {
 
 Deno.serve(async (request) => {
   const origin = request.headers.get('origin')?.replace(/\/$/, '') || null;
-  const configuredOrigin = Deno.env.get('ALLOWED_ORIGIN')?.replace(/\/$/, '');
-  const corsHeaders = getCorsHeaders(origin);
+  const allowedOrigin = resolveAllowedOrigin(origin);
+  const corsHeaders = getCorsHeaders(allowedOrigin);
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -242,7 +285,9 @@ Deno.serve(async (request) => {
     return jsonResponse(405, { error: 'Method not allowed.' }, { ...corsHeaders, Allow: 'POST, OPTIONS' });
   }
 
-  if (configuredOrigin && origin && origin !== configuredOrigin) {
+  // A browser always sends Origin on a cross-origin request. If one is present
+  // and did not resolve to an allowed value, refuse before any provider spend.
+  if (origin && !allowedOrigin) {
     return jsonResponse(403, { error: 'Origin not allowed.' }, corsHeaders);
   }
 
@@ -262,7 +307,8 @@ Deno.serve(async (request) => {
   }
 
   const sharedLimit = await claimSharedSlot(requestId);
-  if (sharedLimit !== 'ok') {
+
+  if (sharedLimit === 'global' || sharedLimit === 'caller') {
     return jsonResponse(
       429,
       {
@@ -272,6 +318,18 @@ Deno.serve(async (request) => {
             : 'Too many requests. Please wait a moment and try again.',
       },
       { ...corsHeaders, 'Retry-After': String(Math.ceil(RATE_WINDOW_MS / 1000)) },
+    );
+  }
+
+  // The durable ceiling could not be consulted. Keep serving, but fall back to
+  // a much tighter per-instance allowance so an outage degrades the limit
+  // rather than removing it. The local counter was already incremented above,
+  // so this only re-tests the count that was recorded.
+  if (sharedLimit === 'degraded' && localLimit.count > DEGRADED_RATE_LIMIT) {
+    return jsonResponse(
+      429,
+      { error: 'The chat service is busy right now. Please try again shortly.' },
+      { ...corsHeaders, 'Retry-After': String(localLimit.retryAfter) },
     );
   }
 

@@ -139,17 +139,42 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), 4500);
 }
 
+const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+/**
+ * Messages this app raised on purpose are safe to show. Anything else is an
+ * internal fault (a JSON parse failure on the upstream stream, a network
+ * TypeError) whose text can carry raw upstream fragments, so it is replaced
+ * with a fixed sentence.
+ */
+class ChatDisplayError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ChatDisplayError';
+  }
+}
+
+function displayableError(error) {
+  if (error instanceof ChatDisplayError && error.message) return error.message;
+  return GENERIC_ERROR;
+}
+
 async function readError(response) {
   try {
     const body = await response.json();
+    // Only this app's own `{ error: <string> }` contract is surfaced. A nested
+    // shape can only come from an intermediary (gateway, CDN, proxy), and its
+    // wording is internal detail that must not reach the transcript.
     if (typeof body.error === 'string') return body.error;
-    if (typeof body.error?.message === 'string') return body.error.message;
   } catch {
     // The fallback below is deliberately generic so server details stay private.
   }
 
   if (response.status === 429) {
     return 'Too many requests. Please wait a moment and try again.';
+  }
+  if (response.status === 403) {
+    return 'This chat cannot be used from this address.';
   }
   if (response.status === 503) {
     return 'The chat service has not been configured yet.';
@@ -164,7 +189,9 @@ function parseChunk(data, state) {
   if (event.error) {
     // The stream is proxied from the model provider, so anything in `error`
     // is upstream internal detail. Never surface it in the transcript.
-    throw new Error('The chat service could not complete this response. Please try again.');
+    throw new ChatDisplayError(
+      'The chat service could not complete this response. Please try again.',
+    );
   }
 
   const delta = event.choices?.[0]?.delta;
@@ -224,10 +251,10 @@ async function submitPrompt(rawPrompt) {
     });
 
     if (!response.ok) {
-      throw new Error(await readError(response));
+      throw new ChatDisplayError(await readError(response));
     }
     if (!response.body) {
-      throw new Error('The server returned an empty response.');
+      throw new ChatDisplayError('The server returned an empty response.');
     }
 
     const decoder = new TextDecoder();
@@ -267,7 +294,7 @@ async function submitPrompt(rawPrompt) {
       if (generation === chatGeneration) history = historyBeforeRequest;
       assistantRefs.article.classList.add('message-error');
       assistantRefs.reasoning.hidden = true;
-      assistantRefs.text.textContent = error?.message || 'Something went wrong. Please try again.';
+      assistantRefs.text.textContent = displayableError(error);
     }
   } finally {
     if (activeController === controller) {

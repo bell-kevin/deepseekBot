@@ -104,18 +104,36 @@ async function readJsonBody(request) {
   }
 }
 
-function corsHeaders(request) {
-  const origin = request.headers.origin;
-  return {
+function corsHeaders(originToAllow) {
+  const headers = {
     'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Origin': allowedOrigin || origin || '*',
     Vary: 'Origin',
   };
+  if (originToAllow) headers['Access-Control-Allow-Origin'] = originToAllow;
+  return headers;
+}
+
+// Returns the origin to echo back, or null when it is not allowed. Fails
+// CLOSED. Reflecting the caller's own origin would let any web page spend this
+// instance's provider key through its visitors' browsers and read the answer,
+// so when ALLOWED_ORIGIN is not configured only this server's own origin is
+// accepted, which is all the bundled front end ever needs.
+function resolveAllowedOrigin(request) {
+  const origin = request.headers.origin?.replace(/\/$/, '');
+  if (!origin) return null;
+
+  if (allowedOrigin) return origin === allowedOrigin ? allowedOrigin : null;
+
+  const host = request.headers.host;
+  if (!host) return null;
+  return origin === `http://${host}` || origin === `https://${host}` ? origin : null;
 }
 
 async function handleChat(request, response) {
-  const cors = corsHeaders(request);
+  const requestOrigin = request.headers.origin?.replace(/\/$/, '');
+  const resolvedOrigin = resolveAllowedOrigin(request);
+  const cors = corsHeaders(resolvedOrigin);
 
   if (request.method === 'OPTIONS') {
     response.writeHead(204, { ...securityHeaders, ...cors });
@@ -128,8 +146,9 @@ async function handleChat(request, response) {
     return;
   }
 
-  const requestOrigin = request.headers.origin?.replace(/\/$/, '');
-  if (allowedOrigin && requestOrigin && requestOrigin !== allowedOrigin) {
+  // A browser always sends Origin on a cross-origin request. If one is present
+  // and did not resolve to an allowed value, refuse before any provider spend.
+  if (requestOrigin && !resolvedOrigin) {
     sendJson(response, 403, { error: 'Origin not allowed.' }, cors);
     return;
   }
