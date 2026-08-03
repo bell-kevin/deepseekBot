@@ -2,6 +2,8 @@
 
 # Flash Chat
 
+https://dsllm.org
+
 https://bell-kevin-deepseekb-skcj.bolt.host/
 
 A tiny, anonymous chat page for **DeepSeek V4 Flash 0731** with reasoning enabled at maximum effort. There are no accounts, registrations, app-set cookies, analytics, or database records. Conversation history lives only in the open browser tab.
