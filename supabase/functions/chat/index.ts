@@ -10,6 +10,11 @@ const MAX_ASSISTANT_MESSAGE_CHARS = 32_000;
 const MAX_TOTAL_CHARS = 50_000;
 const RATE_LIMIT = 8;
 const RATE_WINDOW_MS = 60_000;
+// Service-wide ceiling per window. Individual anonymous callers can never be
+// identified perfectly, so this bounds total spend on the provider key even
+// when per-caller identification fails.
+const GLOBAL_RATE_LIMIT = Number.parseInt(Deno.env.get('GLOBAL_RATE_LIMIT') || '240', 10);
+const RATE_LIMIT_RPC_TIMEOUT_MS = 2_000;
 
 const SYSTEM_PROMPT = `You are a helpful AI assistant powered by DeepSeek V4 Flash 0731.
 Answer the user's request directly and accurately. Prefer clear, concise language, but include detail when it is useful. If you are uncertain, say so. Never invent sources or claim to have capabilities you do not have.`;
@@ -58,15 +63,27 @@ function jsonResponse(status: number, body: { error: string }, headers: HeadersI
   });
 }
 
+// Only the address appended by the nearest trusted proxy can be relied on.
+// A caller can set `cf-connecting-ip` and `x-real-ip` freely and can prepend
+// arbitrary entries to `x-forwarded-for`, so the leftmost entry is attacker
+// controlled. The gateway appends what it actually observed to the right, so
+// the rightmost entry is the only value a caller cannot choose.
 function getRequestId(request: Request) {
-  return (
-    request.headers.get('cf-connecting-ip') ||
-    request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-    request.headers.get('x-real-ip') ||
-    'unknown'
-  );
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) {
+    const hops = forwarded
+      .split(',')
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    if (hops.length > 0) return hops[hops.length - 1];
+  }
+  return 'unknown';
 }
 
+// Local, per-instance pre-filter. It is cheap and catches the obvious floods
+// without a round trip, but it is NOT the real limit: instances do not share
+// memory and are recycled, so `claimSharedSlot` below is what actually bounds
+// traffic across the whole service.
 function isRateLimited(identifier: string) {
   const now = Date.now();
   let bucket = buckets.get(identifier);
@@ -88,6 +105,45 @@ function isRateLimited(identifier: string) {
     limited: bucket.count > RATE_LIMIT,
     retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
   };
+}
+
+// The durable, service-wide limit. State lives in the database so every
+// instance counts against the same totals, and the claim is atomic so two
+// simultaneous requests cannot both take the last remaining slot.
+// Fails OPEN: if the database cannot be reached, chat keeps working rather
+// than going offline, and the local pre-filter above still applies.
+async function claimSharedSlot(identifier: string): Promise<'ok' | 'caller' | 'global'> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !serviceKey) return 'ok';
+
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/claim_chat_request`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        p_bucket_key: identifier,
+        p_limit: RATE_LIMIT,
+        p_window_seconds: Math.ceil(RATE_WINDOW_MS / 1000),
+        p_global_limit: GLOBAL_RATE_LIMIT,
+      }),
+      signal: AbortSignal.timeout(RATE_LIMIT_RPC_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      await response.body?.cancel();
+      return 'ok';
+    }
+
+    const verdict = await response.json();
+    return verdict === 'caller' || verdict === 'global' ? verdict : 'ok';
+  } catch {
+    return 'ok';
+  }
 }
 
 async function readBodyWithLimit(request: Request) {
@@ -165,11 +221,12 @@ function validateMessages(value: unknown): ChatMessage[] {
   return messages;
 }
 
+// Upstream failures are the operator's problem, not the caller's. Never
+// disclose which provider is used, whether its key was rejected, or whether
+// the account has run out of credit.
 function providerError(status: number) {
-  if (status === 401 || status === 403) return 'DeepSeek rejected the server API key.';
-  if (status === 402) return 'The DeepSeek account has insufficient balance.';
-  if (status === 429) return 'DeepSeek is rate limited. Please try again shortly.';
-  return 'DeepSeek could not complete the request.';
+  if (status === 429) return 'The chat service is busy. Please try again shortly.';
+  return 'The chat service could not complete the request. Please try again.';
 }
 
 Deno.serve(async (request) => {
@@ -194,18 +251,33 @@ Deno.serve(async (request) => {
     return jsonResponse(413, { error: 'The request body is too large.' }, corsHeaders);
   }
 
-  const limit = isRateLimited(getRequestId(request));
-  if (limit.limited) {
+  const requestId = getRequestId(request);
+  const localLimit = isRateLimited(requestId);
+  if (localLimit.limited) {
     return jsonResponse(
       429,
       { error: 'Too many requests. Please wait a moment and try again.' },
-      { ...corsHeaders, 'Retry-After': String(limit.retryAfter) },
+      { ...corsHeaders, 'Retry-After': String(localLimit.retryAfter) },
+    );
+  }
+
+  const sharedLimit = await claimSharedSlot(requestId);
+  if (sharedLimit !== 'ok') {
+    return jsonResponse(
+      429,
+      {
+        error:
+          sharedLimit === 'global'
+            ? 'The chat service is busy right now. Please try again shortly.'
+            : 'Too many requests. Please wait a moment and try again.',
+      },
+      { ...corsHeaders, 'Retry-After': String(Math.ceil(RATE_WINDOW_MS / 1000)) },
     );
   }
 
   const apiKey = Deno.env.get('DEEPSEEK_API_KEY');
   if (!apiKey) {
-    return jsonResponse(503, { error: 'The server is missing DEEPSEEK_API_KEY.' }, corsHeaders);
+    return jsonResponse(503, { error: 'The chat service is temporarily unavailable.' }, corsHeaders);
   }
 
   try {
@@ -254,7 +326,7 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') {
-      return jsonResponse(504, { error: 'DeepSeek took too long to respond.' }, corsHeaders);
+      return jsonResponse(504, { error: 'The chat service took too long to respond.' }, corsHeaders);
     }
     if (error instanceof RequestError) {
       return jsonResponse(error.status, { error: error.message }, corsHeaders);

@@ -162,7 +162,9 @@ function parseChunk(data, state) {
 
   const event = JSON.parse(data);
   if (event.error) {
-    throw new Error(event.error.message || 'DeepSeek returned an error.');
+    // The stream is proxied from the model provider, so anything in `error`
+    // is upstream internal detail. Never surface it in the transcript.
+    throw new Error('The chat service could not complete this response. Please try again.');
   }
 
   const delta = event.choices?.[0]?.delta;

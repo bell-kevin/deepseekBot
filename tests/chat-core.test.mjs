@@ -84,10 +84,21 @@ test('rate limiter resets after its window', () => {
   assert.equal(limit('visitor', 1000).allowed, true);
 });
 
-test('provider errors do not expose upstream response bodies', () => {
+test('provider errors do not expose upstream response bodies or account state', () => {
+  // The caller must not learn which provider is used, whether its key was
+  // rejected, or whether the account is out of credit.
   assert.deepEqual(providerError(401), {
     status: 502,
-    message: 'DeepSeek rejected the server API key.',
+    message: 'The chat service could not complete the request. Please try again.',
+  });
+  assert.deepEqual(providerError(402), {
+    status: 502,
+    message: 'The chat service could not complete the request. Please try again.',
   });
   assert.equal(providerError(500).status, 502);
+  assert.equal(providerError(429).status, 429);
+
+  for (const status of [401, 402, 429, 500, 503]) {
+    assert.doesNotMatch(providerError(status).message, /deepseek|api key|balance/i);
+  }
 });

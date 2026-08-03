@@ -24,6 +24,9 @@ const environment = { ...fileEnvironment, ...process.env };
 const port = Number.parseInt(environment.PORT || '5173', 10);
 const host = environment.HOST || '0.0.0.0';
 const allowedOrigin = environment.ALLOWED_ORIGIN?.replace(/\/$/, '');
+// Forwarded headers are caller-supplied unless a proxy we control overwrites
+// them, so they are only consulted when the operator opts in explicitly.
+const trustProxy = /^(1|true|yes)$/i.test(environment.TRUST_PROXY || '');
 const distDirectory = resolve(process.cwd(), 'dist');
 const rateLimit = createRateLimiter();
 
@@ -60,8 +63,21 @@ function sendJson(response, status, body, extraHeaders = {}) {
 }
 
 function getRequestIp(request) {
-  const forwarded = request.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
+  // The TCP peer address cannot be forged by the caller, so it is the default.
+  // Behind a trusted proxy the peer is the proxy itself, so read the rightmost
+  // `x-forwarded-for` entry, which is the address that proxy actually observed.
+  // The leftmost entry is never used: proxies append, so a caller can prepend
+  // any value it likes.
+  if (trustProxy) {
+    const forwarded = request.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string') {
+      const hops = forwarded
+        .split(',')
+        .map((hop) => hop.trim())
+        .filter(Boolean);
+      if (hops.length > 0) return hops[hops.length - 1];
+    }
+  }
   return request.socket.remoteAddress || 'unknown';
 }
 
@@ -131,7 +147,9 @@ async function handleChat(request, response) {
 
   const apiKey = environment.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    sendJson(response, 503, { error: 'Add DEEPSEEK_API_KEY to the server environment.' }, cors);
+    // The operator needs this detail; the caller does not.
+    console.error('Chat request rejected: DEEPSEEK_API_KEY is not set in the environment.');
+    sendJson(response, 503, { error: 'The chat service is temporarily unavailable.' }, cors);
     return;
   }
 
@@ -189,7 +207,7 @@ async function handleChat(request, response) {
       return;
     }
     if (error?.name === 'AbortError') {
-      sendJson(response, 504, { error: 'DeepSeek took too long to respond.' }, cors);
+      sendJson(response, 504, { error: 'The chat service took too long to respond.' }, cors);
       return;
     }
     sendJson(response, 502, { error: 'The chat service could not complete the request.' }, cors);
@@ -227,7 +245,7 @@ async function serveStatic(request, response, pathname) {
     });
     response.end(request.method === 'HEAD' ? undefined : content);
   } catch {
-    sendJson(response, 404, { error: 'Build not found. Run npm run build first.' });
+    sendJson(response, 404, { error: 'Not found.' });
   }
 }
 
@@ -250,7 +268,7 @@ const server = createServer(async (request, response) => {
     vite.middlewares(request, response, (error) => {
       if (error) {
         vite.ssrFixStacktrace(error);
-        sendJson(response, 500, { error: 'Development server error.' });
+        sendJson(response, 500, { error: 'Internal server error.' });
       } else if (!response.writableEnded) {
         sendJson(response, 404, { error: 'Not found.' });
       }

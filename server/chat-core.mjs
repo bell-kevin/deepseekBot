@@ -103,15 +103,15 @@ export function createRateLimiter({ limit = 8, windowMs = 60_000 } = {}) {
   };
 }
 
+// Upstream failures are the operator's problem, not the caller's. Never
+// disclose which provider is used, whether its key was rejected, or whether
+// the account has run out of credit.
 export function providerError(status) {
-  if (status === 401 || status === 403) {
-    return { status: 502, message: 'DeepSeek rejected the server API key.' };
-  }
-  if (status === 402) {
-    return { status: 502, message: 'The DeepSeek account has insufficient balance.' };
-  }
   if (status === 429) {
-    return { status: 429, message: 'DeepSeek is rate limited. Please try again shortly.' };
+    return { status: 429, message: 'The chat service is busy. Please try again shortly.' };
   }
-  return { status: 502, message: 'DeepSeek could not complete the request.' };
+  return {
+    status: 502,
+    message: 'The chat service could not complete the request. Please try again.',
+  };
 }
