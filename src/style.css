@@ -4,7 +4,7 @@
     Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --page: #f7f7f4;
+  --page: #ffffff;
   --surface: #ffffff;
   --surface-soft: #f0f1ed;
   --ink: #171815;
@@ -74,7 +74,7 @@ a {
   min-height: 72px;
   padding: 12px clamp(18px, 4vw, 38px);
   border-bottom: 1px solid var(--line);
-  background: rgb(247 247 244 / 92%);
+  background: rgb(255 255 255 / 92%);
   backdrop-filter: blur(14px);
 }
 
@@ -440,7 +440,7 @@ a {
   z-index: 5;
   min-width: 0;
   padding: 12px clamp(16px, 4vw, 38px) 14px;
-  background: linear-gradient(to top, var(--page) 78%, rgb(247 247 244 / 0%));
+  background: linear-gradient(to top, var(--page) 78%, rgb(255 255 255 / 0%));
 }
 
 .composer {
