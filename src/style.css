@@ -19,6 +19,23 @@
   --shadow: 0 14px 35px rgb(33 37 30 / 8%);
 }
 
+[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #131414;
+  --surface: #1c1d1e;
+  --surface-soft: #242526;
+  --ink: #e8e9e4;
+  --muted: #9a9d96;
+  --line: #2e3030;
+  --line-strong: #3d3f3f;
+  --accent: #6ea8fe;
+  --accent-strong: #9dc3ff;
+  --accent-soft: #1a2740;
+  --success: #34d399;
+  --danger: #f87171;
+  --shadow: 0 14px 35px rgb(0 0 0 / 30%);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -74,7 +91,7 @@ a {
   min-height: 72px;
   padding: 12px clamp(18px, 4vw, 38px);
   border-bottom: 1px solid var(--line);
-  background: rgb(255 255 255 / 92%);
+  background: color-mix(in srgb, var(--page) 92%, transparent);
   backdrop-filter: blur(14px);
 }
 
@@ -95,7 +112,7 @@ a {
   height: 36px;
   border-radius: 11px;
   background: var(--ink);
-  color: #fff;
+  color: var(--page);
 }
 
 .brand-mark svg {
@@ -142,7 +159,7 @@ a {
   padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgb(255 255 255 / 72%);
+  background: color-mix(in srgb, var(--page) 72%, transparent);
 }
 
 .model-badge strong {
@@ -263,8 +280,8 @@ a {
   padding: 9px 13px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgb(255 255 255 / 75%);
-  color: #51544e;
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+  color: var(--muted);
   font-size: 0.79rem;
   cursor: pointer;
   transition:
@@ -274,7 +291,7 @@ a {
 }
 
 .suggestions button:hover {
-  border-color: #b9c8e6;
+  border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
@@ -318,7 +335,7 @@ a {
   max-width: min(82%, 610px);
   padding: 11px 15px;
   border-radius: 18px 18px 5px 18px;
-  background: #e8e9e4;
+  background: var(--surface-soft);
 }
 
 .message-label {
@@ -346,7 +363,7 @@ a {
   margin: 0 0 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgb(255 255 255 / 58%);
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
 }
 
 .reasoning[hidden] {
@@ -374,7 +391,7 @@ a {
   height: 7px;
   margin-right: 9px;
   border-radius: 999px;
-  background: #8aa7de;
+  background: var(--accent);
   content: "";
 }
 
@@ -402,7 +419,7 @@ a {
   margin: 0;
   overflow: auto;
   padding: 12px;
-  color: #666962;
+  color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.74rem;
   line-height: 1.6;
@@ -420,7 +437,7 @@ a {
   width: 5px;
   height: 5px;
   border-radius: 999px;
-  background: #8b8e86;
+  background: var(--muted);
   animation: thinking 1.25s ease-in-out infinite;
 }
 
@@ -440,7 +457,7 @@ a {
   z-index: 5;
   min-width: 0;
   padding: 12px clamp(16px, 4vw, 38px) 14px;
-  background: linear-gradient(to top, var(--page) 78%, rgb(255 255 255 / 0%));
+  background: linear-gradient(to top, var(--page) 78%, transparent);
 }
 
 .composer {
@@ -460,10 +477,10 @@ a {
 }
 
 .composer:focus-within {
-  border-color: #9cb3dc;
+  border-color: var(--accent);
   box-shadow:
     0 8px 26px rgb(34 38 30 / 7%),
-    0 0 0 3px rgb(23 92 211 / 9%);
+    0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .composer textarea {
@@ -482,7 +499,7 @@ a {
 }
 
 .composer textarea::placeholder {
-  color: #969990;
+  color: var(--muted);
 }
 
 .send-button {
@@ -495,7 +512,7 @@ a {
   border: 0;
   border-radius: 12px;
   background: var(--ink);
-  color: #fff;
+  color: var(--page);
   cursor: pointer;
   transition:
     background 150ms ease,
@@ -504,7 +521,7 @@ a {
 }
 
 .send-button:hover {
-  background: #30322d;
+  background: var(--line-strong);
 }
 
 .send-button:active {
@@ -544,7 +561,7 @@ a {
   justify-content: center;
   width: min(100%, 760px);
   margin: 9px auto 0;
-  color: #62655e;
+  color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.45;
   text-align: center;
@@ -567,8 +584,8 @@ a {
   padding: 11px 14px;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
-  background: #242621;
-  color: #fff;
+  background: var(--surface-soft);
+  color: var(--ink);
   box-shadow: var(--shadow);
   font-size: 0.78rem;
   line-height: 1.45;
@@ -744,4 +761,17 @@ a {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Theme toggle icon visibility */
+#theme-toggle .icon-sun {
+  display: none;
+}
+
+[data-theme="dark"] #theme-toggle .icon-moon {
+  display: none;
+}
+
+[data-theme="dark"] #theme-toggle .icon-sun {
+  display: block;
 }

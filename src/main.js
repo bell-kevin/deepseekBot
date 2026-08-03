@@ -9,6 +9,7 @@ const form = document.querySelector('#composer');
 const promptInput = document.querySelector('#prompt');
 const sendButton = document.querySelector('#send');
 const newChatButton = document.querySelector('#new-chat');
+const themeToggle = document.querySelector('#theme-toggle');
 const toast = document.querySelector('#toast');
 
 const explicitEndpoint = import.meta.env.VITE_CHAT_ENDPOINT?.trim();
@@ -345,3 +346,18 @@ document.querySelectorAll('[data-prompt]').forEach((button) => {
 });
 
 resizePrompt();
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  themeToggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#131414' : '#ffffff';
+}
+
+const savedTheme = localStorage.getItem('theme') || 'light';
+applyTheme(savedTheme);
+
+themeToggle.addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
+});
