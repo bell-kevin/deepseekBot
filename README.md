@@ -86,6 +86,8 @@ npm run check
 
 This runs the unit tests, production build, and corresponding-source generation.
 
+see https://artificialanalysis.ai/ for cost, etc.
+
 https://dsllm.org
 
 <p align="right"><a href="#readme-top">back to top</a></p>
