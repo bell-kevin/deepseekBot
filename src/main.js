@@ -264,9 +264,23 @@ async function submitPrompt(rawPrompt) {
       scheduleRender();
     });
 
-    for await (const bytes of response.body) {
-      parser.push(decoder.decode(bytes, { stream: true }));
+    const reader = response.body.getReader();
+
+try {
+  while (true) {
+    const { value, done } = await reader.read();
+
+    if (done) {
+      break;
     }
+
+    parser.push(decoder.decode(value, { stream: true }));
+  }
+} finally {
+  reader.releaseLock();
+}
+
+    
     parser.push(decoder.decode());
     parser.finish();
 
